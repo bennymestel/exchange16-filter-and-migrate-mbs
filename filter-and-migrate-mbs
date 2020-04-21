@@ -1,0 +1,45 @@
+# Add the name of the appropriate OU
+$name = "users"
+
+# Enter the Distinguished Name of the appropriate AD OU you wish to filter and then migrate
+$OU = ""
+
+# Enter the name of the destination Mailbox Database
+$mdb = ""
+
+$oneyearago = (get-date).AddYears(-1)
+$oneyearago = $oneyearago.ToUniversalTime()
+
+$beforelist = Get-Mailbox -Organizationalunit $ou -ResultSize unlimited
+
+[system.collections.arraylist]$afterlist= @()
+$afterlist.add($expression+"EmailAddress"+$expression)
+
+foreach ($email in $beforelist)
+{
+  $SamAccountName = $email.SamAccountName
+  $enabled = (get-aduser $SamAccountName).enabled
+  $lastlogondate = (get-aduser $SamAccountName -properties *).lastlogondate
+  if (($lastlogondate -gt $oneyearago) -or ($Enabled -eq $true))
+  {
+    $address = $email.windowsemailaddress
+    $afterlist.Add($address) | out-null
+  }
+}
+
+$path = "c:\migration-by-ou"
+if(!(test-path $path))
+{
+  new-item -path $path -ItemType directory
+}
+$path += "\users.csv"
+
+$afterlist | out-file $path
+
+$lines = (get-content $path | measure-object -line).lines
+$lines--
+
+write-host "There are $lines users that will be transferred to the $mdb MDB. Starting migration batch now..."
+
+New-MigrationBatch -Name MigrateUsers -CSVData ([System.IO.File]::ReadAllBytes($path)) -TargetDatabases $mdb 
+Start-MigrationBatch -Identity MigrateUsers
